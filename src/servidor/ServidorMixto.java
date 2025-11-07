@@ -18,8 +18,6 @@ import java.util.*;
  * - Consola de administracion integrada
  * - Registro de clientes TCP y UDP por separado
  * 
- * @author Angel
- * @version 1.0
  */
 public class ServidorMixto {
     
