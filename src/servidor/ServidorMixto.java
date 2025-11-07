@@ -219,7 +219,7 @@ public class ServidorMixto {
         String mensaje = new String(paquete.getData(), 0, paquete.getLength());
         System.out.println("Mensaje UDP de " + idCliente + ": " + mensaje);
         
-        // TODO: Implementar logica de procesamiento de mensajes UDP
+   
         // Esto se expandira cuando se implemente el manejo completo de mensajes
     }
     
