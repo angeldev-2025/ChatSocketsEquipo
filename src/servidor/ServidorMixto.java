@@ -4,6 +4,7 @@ import common.Protocolo;
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import javax.swing.SwingUtilities;
 
 /**
  * SERVIDOR MIXTO - SISTEMA DE CHAT CON SOCKETS TCP Y UDP
@@ -85,6 +86,9 @@ public class ServidorMixto {
         System.out.println("Puerto UDP: " + PUERTO_UDP);
         System.out.println("Equipo: Alin, Abril, Mario, Angel");
         
+        // Iniciar interfaz grafica del servidor
+        SwingUtilities.invokeLater(() -> new GUIservidor());
+        
         // Iniciar servidor TCP en un hilo separado
         Thread hiloTCP = new Thread(() -> iniciarServidorTCP());
         hiloTCP.start();
@@ -96,6 +100,8 @@ public class ServidorMixto {
         // Iniciar consola de administracion en el hilo principal
         iniciarConsolaAdministracion();
     }
+    
+    
     
     // =============================================
     // SERVIDOR TCP - ORIENTADO A CONEXION
