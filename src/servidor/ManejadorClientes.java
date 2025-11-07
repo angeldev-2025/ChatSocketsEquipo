@@ -3,6 +3,7 @@ package servidor;
 import common.Protocolo;
 import java.io.*;
 import java.net.*;
+import java.util.List;
 
 /**
  * MANEJADOR DE CLIENTES - GESTION DE CONEXIONES INDIVIDUALES
@@ -16,6 +17,7 @@ import java.net.*;
  * - Recibir y procesar mensajes del cliente
  * - Enviar respuestas y mensajes al cliente
  * - Gestionar la desconexion y liberacion de recursos
+ * - Interpretar y ejecutar diferentes tipos de envio de mensajes
  * 
  * @author Angel  
  * @version 1.0
@@ -110,6 +112,11 @@ public class ManejadorClientes implements Runnable {
         
         // Enviar mensaje de bienvenida al cliente
         enviarMensaje("Bienvenido al servidor! Tu ID: " + idCliente);
+        enviarMensaje("Comandos disponibles:");
+        enviarMensaje("  BROADCAST:mensaje  -> Enviar a todos");
+        enviarMensaje("  UNICAST:destino:mensaje -> Mensaje privado");
+        enviarMensaje("  ANYCAST:mensaje    -> Enviar a cualquier cliente");
+        enviarMensaje("  LISTA               -> Ver clientes conectados");
         
         // Bucle principal de recepcion de mensajes (solo para TCP)
         while (activo && tipoProtocolo == Protocolo.TCP) {
@@ -147,24 +154,74 @@ public class ManejadorClientes implements Runnable {
     // =============================================
     
     /**
-     * Procesa un mensaje recibido del cliente
-     * Actualmente implementa un echo simple
-     * En el futuro manejara los diferentes tipos de envio:
-     * - UNICAST: Mensaje a cliente especifico
-     * - BROADCAST: Mensaje a todos los clientes  
-     * - MULTICAST: Mensaje a grupo de clientes
-     * - ANYCAST: Mensaje a cualquier cliente disponible
+     * Procesa un mensaje recibido del cliente e interpreta el tipo de envio
+     * Soporta los siguientes formatos:
+     * - BROADCAST:mensaje -> Envia a todos los clientes
+     * - UNICAST:destino:mensaje -> Envia a cliente especifico
+     * - ANYCAST:mensaje -> Envia a cualquier cliente disponible
+     * - LISTA -> Devuelve lista de clientes conectados
+     * - mensaje normal -> Echo simple (comportamiento por defecto)
      * 
      * @param mensaje Mensaje de texto recibido del cliente
      */
     private void procesarMensaje(String mensaje) {
-        // TODO: Implementar logica completa de procesamiento de mensajes
-        // Esta seccion se expandira para manejar los diferentes tipos de envio
+        // Verificar si es un comando especial
+        if (mensaje.toUpperCase().startsWith("BROADCAST:")) {
+            // Formato: BROADCAST:mensaje
+            String contenido = mensaje.substring(10); // Remover "BROADCAST:"
+            ServidorMixto.broadcastMensaje(contenido, this.idCliente);
+            
+        } else if (mensaje.toUpperCase().startsWith("UNICAST:")) {
+            // Formato: UNICAST:destino:mensaje
+            String[] partes = mensaje.split(":", 3);
+            if (partes.length == 3) {
+                String destino = partes[1];
+                String contenido = partes[2];
+                boolean exito = ServidorMixto.unicastMensaje(contenido, destino, this.idCliente);
+                
+                if (!exito) {
+                    enviarMensaje("ERROR: Cliente destino no encontrado: " + destino);
+                }
+            } else {
+                enviarMensaje("ERROR: Formato UNICAST incorrecto. Use: UNICAST:destino:mensaje");
+            }
+            
+        } else if (mensaje.toUpperCase().startsWith("ANYCAST:")) {
+            // Formato: ANYCAST:mensaje
+            String contenido = mensaje.substring(8); // Remover "ANYCAST:"
+            String destino = ServidorMixto.anycastMensaje(contenido, this.idCliente);
+            
+            if (destino != null) {
+                enviarMensaje("ANYCAST enviado a: " + destino);
+            } else {
+                enviarMensaje("ERROR: No hay clientes disponibles para ANYCAST");
+            }
+            
+        } else if (mensaje.equalsIgnoreCase("LISTA")) {
+            // Mostrar lista de clientes conectados
+            mostrarListaClientes();
+            
+        } else {
+            // Mensaje normal - comportamiento de echo
+            enviarMensaje("Echo: " + mensaje);
+            System.out.println("Mensaje procesado de " + idCliente);
+        }
+    }
+    
+    /**
+     * Envia al cliente la lista de clientes TCP conectados actualmente
+     */
+    private void mostrarListaClientes() {
+        List<String> clientes = ServidorMixto.getClientesTCP();
+        enviarMensaje("=== CLIENTES CONECTADOS (" + clientes.size() + ") ===");
         
-        // Por ahora, solo responde con un echo del mensaje
-        enviarMensaje("Echo: " + mensaje);
+        for (int i = 0; i < clientes.size(); i++) {
+            String cliente = clientes.get(i);
+            String indicador = cliente.equals(this.idCliente) ? " (TU)" : "";
+            enviarMensaje((i + 1) + ". " + cliente + indicador);
+        }
         
-        System.out.println("Mensaje procesado de " + idCliente);
+        enviarMensaje("=== FIN DE LISTA ===");
     }
     
     // =============================================
@@ -190,6 +247,7 @@ public class ManejadorClientes implements Runnable {
     /**
      * Cierra la conexion con el cliente y libera todos los recursos
      * Se ejecuta automaticamente cuando el cliente se desconecta
+     * Notifica al servidor para remover este manejador de la lista activa
      */
     private void cerrarConexion() {
         activo = false;
@@ -199,6 +257,9 @@ public class ManejadorClientes implements Runnable {
             if (entrada != null) entrada.close();
             if (salida != null) salida.close();
             if (clienteSocket != null) clienteSocket.close();
+            
+            // Notificar al servidor que este manejador ya no esta activo
+            ServidorMixto.removerManejador(this.idCliente);
             
             System.out.println("Conexion cerrada para: " + idCliente);
             
