@@ -20,8 +20,6 @@ import javax.swing.SwingUtilities;
  * - Registro de clientes TCP y UDP por separado
  * - Sistema de mensajeria entre clientes (BROADCAST, UNICAST, etc.)
  * 
- * @author Angel
- * @version 1.0
  */
 public class ServidorMixto {
     
