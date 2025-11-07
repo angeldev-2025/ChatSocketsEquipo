@@ -3,7 +3,7 @@ package cliente;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.ArrayList;
+import java.util.List;
 
 public class GUIcliente extends JFrame {
     private JTextField txtServidor;
@@ -15,8 +15,11 @@ public class GUIcliente extends JFrame {
     private JButton btnBroadcast, btnUnicast, btnAnycast, btnMulticast, btnEnviar;
     private JTextField txtMensaje;
 
+    private ClienteChat clienteTCP;
+    private boolean conectado = false;
+
     public GUIcliente() {
-        setTitle("Cliente Chat (TCP/UDP)");
+        setTitle("Cliente Chat TCP/UDP");
         setSize(800, 500);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -34,7 +37,6 @@ public class GUIcliente extends JFrame {
 
         btnConectar = new JButton("Conectar");
         panelConexion.add(btnConectar);
-
         add(panelConexion, BorderLayout.NORTH);
 
         // 💬 Panel central dividido en mensajes y usuarios
@@ -45,7 +47,7 @@ public class GUIcliente extends JFrame {
         areaMensajes = new JTextArea();
         areaMensajes.setEditable(false);
         JScrollPane scrollMensajes = new JScrollPane(areaMensajes);
-        scrollMensajes.setBorder(BorderFactory.createTitledBorder("Mensajess"));
+        scrollMensajes.setBorder(BorderFactory.createTitledBorder("Mensajes"));
 
         // Derecha: lista de usuarios conectados
         modeloUsuarios = new DefaultListModel<>();
@@ -81,15 +83,71 @@ public class GUIcliente extends JFrame {
         panelMensaje.add(btnEnviar, BorderLayout.EAST);
 
         panelInferior.add(panelMensaje, BorderLayout.SOUTH);
-
         add(panelInferior, BorderLayout.SOUTH);
 
-        // 🎯 Evento del botón MULTICAST
+        // 🎯 Acción del botón Conectar
+        btnConectar.addActionListener(e -> {
+            if (!conectado) {
+                String host = txtServidor.getText().trim();
+                int puerto = Integer.parseInt(txtPuerto.getText().trim());
+                clienteTCP = new ClienteChat(this);
+                if (clienteTCP.conectar(host, puerto)) {
+                    conectado = true;
+                    btnConectar.setText("Desconectar");
+                }
+            } else {
+                clienteTCP.cerrar();
+                conectado = false;
+                btnConectar.setText("Conectar");
+                agregarMensaje("🔌 Desconectado del servidor.");
+            }
+        });
+
+        // ✉️ Acción del botón Enviar
+        btnEnviar.addActionListener(e -> {
+            if (conectado && clienteTCP != null) {
+                String mensaje = txtMensaje.getText().trim();
+                if (!mensaje.isEmpty()) {
+                    clienteTCP.enviarMensaje(mensaje);
+                    agregarMensaje("Tú: " + mensaje);
+                    txtMensaje.setText("");
+                }
+            } else {
+                agregarMensaje("⚠️ No estás conectado al servidor.");
+            }
+        });
+
+        // 🪄 Botones para BROADCAST / UNICAST / ANYCAST / MULTICAST
+        btnBroadcast.addActionListener(e -> enviarComando("BROADCAST"));
+        btnUnicast.addActionListener(e -> enviarComando("UNICAST"));
+        btnAnycast.addActionListener(e -> enviarComando("ANYCAST"));
         btnMulticast.addActionListener(e -> abrirVentanaMulticast());
+    }
+
+    private void enviarComando(String tipo) {
+        if (conectado && clienteTCP != null) {
+            String mensaje = JOptionPane.showInputDialog(this, "Escribe el mensaje para " + tipo + ":");
+            if (mensaje != null && !mensaje.trim().isEmpty()) {
+                if (tipo.equals("UNICAST")) {
+                    String destino = JOptionPane.showInputDialog(this, "ID del destino:");
+                    clienteTCP.enviarMensaje(tipo + ":" + destino + ":" + mensaje);
+                } else {
+                    clienteTCP.enviarMensaje(tipo + ":" + mensaje);
+                }
+                agregarMensaje("Tú (" + tipo + "): " + mensaje);
+            }
+        } else {
+            agregarMensaje("⚠️ No estás conectado al servidor.");
+        }
     }
 
     // 🪟 Ventana secundaria para seleccionar miembros MULTICAST
     private void abrirVentanaMulticast() {
+        if (!conectado) {
+            agregarMensaje("⚠️ Conéctate antes de crear un grupo multicast.");
+            return;
+        }
+
         JDialog dialogo = new JDialog(this, "Seleccionar miembros del grupo", true);
         dialogo.setSize(300, 300);
         dialogo.setLocationRelativeTo(this);
@@ -100,7 +158,6 @@ public class GUIcliente extends JFrame {
         listaSeleccion.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         dialogo.add(new JScrollPane(listaSeleccion), BorderLayout.CENTER);
 
-        // Botones de acción
         JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton btnAceptar = new JButton("Crear grupo");
         JButton btnCancelar = new JButton("Cancelar");
@@ -110,15 +167,15 @@ public class GUIcliente extends JFrame {
 
         btnCancelar.addActionListener(ev -> dialogo.dispose());
         btnAceptar.addActionListener(ev -> {
-            java.util.List<String> seleccionados = listaSeleccion.getSelectedValuesList();
+            List<String> seleccionados = listaSeleccion.getSelectedValuesList();
             if (!seleccionados.isEmpty()) {
-                JOptionPane.showMessageDialog(this,
-                    "Grupo multicast creado con:\n" + String.join(", ", seleccionados),
-                    "Multicast", JOptionPane.INFORMATION_MESSAGE);
+                String grupo = String.join(",", seleccionados);
+                agregarMensaje("Grupo multicast creado con: " + grupo);
+                clienteTCP.enviarMensaje("MULTICAST:" + grupo);
             } else {
                 JOptionPane.showMessageDialog(this,
-                    "Selecciona al menos un usuario.",
-                    "Aviso", JOptionPane.WARNING_MESSAGE);
+                        "Selecciona al menos un usuario.",
+                        "Aviso", JOptionPane.WARNING_MESSAGE);
             }
             dialogo.dispose();
         });
@@ -126,12 +183,12 @@ public class GUIcliente extends JFrame {
         dialogo.setVisible(true);
     }
 
-    // Método para agregar mensajes en el chat
+    // Mostrar mensajes en el área de texto
     public void agregarMensaje(String mensaje) {
         areaMensajes.append(mensaje + "\n");
     }
 
-    // Método para actualizar la lista de usuarios conectados
+    // Actualizar lista de usuarios conectados
     public void actualizarUsuarios(java.util.List<String> usuarios) {
         modeloUsuarios.clear();
         for (String u : usuarios) {
@@ -140,8 +197,6 @@ public class GUIcliente extends JFrame {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            new GUIcliente().setVisible(true);
-        });
+        SwingUtilities.invokeLater(() -> new GUIcliente().setVisible(true));
     }
 }

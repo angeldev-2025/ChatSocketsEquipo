@@ -1,93 +1,56 @@
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.*;
+package cliente;
 import java.io.*;
 import java.net.*;
 
-public class ClienteChat extends JFrame {
-    private static final String HOST = "localhost";
-    private static final int PUERTO_TCP = 12345;
-
+public class ClienteChat {
     private Socket socket;
-    private PrintWriter out;
-    private BufferedReader in;
+    private BufferedReader entrada;
+    private PrintWriter salida;
+    private GUIcliente gui;
 
-    private JTextArea areaChat;
-    private JTextField campoMensaje;
-    private JButton botonEnviar;
-    private JLabel estadoConexion;
-
-    public ClienteChat() {
-        super("Cliente Chat TCP");
-
-        // --- Configurar interfaz ---
-        setSize(450, 400);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLayout(new BorderLayout());
-
-        areaChat = new JTextArea();
-        areaChat.setEditable(false);
-        areaChat.setFont(new Font("Arial", Font.PLAIN, 14));
-        add(new JScrollPane(areaChat), BorderLayout.CENTER);
-
-        JPanel panelInferior = new JPanel(new BorderLayout());
-        campoMensaje = new JTextField();
-        botonEnviar = new JButton("Enviar");
-        panelInferior.add(campoMensaje, BorderLayout.CENTER);
-        panelInferior.add(botonEnviar, BorderLayout.EAST);
-
-        estadoConexion = new JLabel("Desconectado");
-        estadoConexion.setHorizontalAlignment(SwingConstants.CENTER);
-        add(estadoConexion, BorderLayout.NORTH);
-        add(panelInferior, BorderLayout.SOUTH);
-
-        // --- Eventos ---
-        botonEnviar.addActionListener(e -> enviarMensaje());
-        campoMensaje.addActionListener(e -> enviarMensaje());
-
-        // --- Conectar con el servidor ---
-        conectarServidor();
-
-        setVisible(true);
+    public ClienteChat(GUIcliente gui) {
+        this.gui = gui;
     }
 
-    private void conectarServidor() {
+    // 🔌 Conectar al servidor TCP
+    public boolean conectar(String host, int puerto) {
         try {
-            socket = new Socket(HOST, PUERTO_TCP);
-            out = new PrintWriter(socket.getOutputStream(), true);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            socket = new Socket(host, puerto);
+            entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            salida = new PrintWriter(socket.getOutputStream(), true);
 
-            estadoConexion.setText("Conectado a " + HOST + ":" + PUERTO_TCP);
-            areaChat.append("✅ Conectado al servidor TCP\n");
+            gui.agregarMensaje(" Conectado al servidor TCP en " + host + ":" + puerto);
 
             // Hilo para escuchar mensajes del servidor
             new Thread(() -> {
                 try {
                     String mensaje;
-                    while ((mensaje = in.readLine()) != null) {
-                        areaChat.append("Servidor: " + mensaje + "\n");
+                    while ((mensaje = entrada.readLine()) != null) {
+                        gui.agregarMensaje("Servidor: " + mensaje);
                     }
-                } catch (IOException ex) {
-                    areaChat.append("❌ Conexión cerrada por el servidor.\n");
+                } catch (IOException e) {
+                    gui.agregarMensaje("❌ Conexión cerrada.");
                 }
             }).start();
 
+            return true;
         } catch (IOException e) {
-            estadoConexion.setText("Error de conexión");
-            areaChat.append("❌ No se pudo conectar al servidor.\n");
+            gui.agregarMensaje("❌ Error al conectar: " + e.getMessage());
+            return false;
         }
     }
 
-    private void enviarMensaje() {
-        String mensaje = campoMensaje.getText().trim();
-        if (!mensaje.isEmpty() && out != null) {
-            out.println(mensaje);
-            areaChat.append("Tú: " + mensaje + "\n");
-            campoMensaje.setText("");
+    // ✉️ Enviar mensaje al servidor
+    public void enviarMensaje(String mensaje) {
+        if (salida != null) {
+            salida.println(mensaje);
         }
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(ClienteChat::new);
+    // 🔒 Cerrar conexión
+    public void cerrar() {
+        try {
+            if (socket != null) socket.close();
+        } catch (IOException ignored) {}
     }
 }
