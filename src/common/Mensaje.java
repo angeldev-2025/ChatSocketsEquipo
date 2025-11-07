@@ -263,4 +263,5 @@ public class Mensaje implements Serializable {
     public String getDescripcionEnvio() {
         return Protocolo.getDescripcionTipoEnvio(tipoEnvio);
     }
+    
 }
