@@ -17,6 +17,7 @@ import java.util.*;
  * - Gestiona clientes concurrentes con hilos separados
  * - Consola de administracion integrada
  * - Registro de clientes TCP y UDP por separado
+ * - Sistema de mensajeria entre clientes (BROADCAST, UNICAST, etc.)
  * 
  * @author Angel
  * @version 1.0
@@ -54,6 +55,12 @@ public class ServidorMixto {
      * Los clientes UDP no mantienen conexion persistente
      */
     private static List<String> clientesUDP = Collections.synchronizedList(new ArrayList<>());
+    
+    /**
+     * Mapa de manejadores de clientes activos (solo TCP)
+     * Permite encontrar manejadores especificos para enviar mensajes
+     */
+    private static Map<String, ManejadorClientes> manejadoresActivos = Collections.synchronizedMap(new HashMap<>());
     
     /**
      * Bandera que controla el estado del servidor
@@ -123,6 +130,10 @@ public class ServidorMixto {
                     
                     // Crear y ejecutar manejador para este cliente
                     ManejadorClientes manejador = new ManejadorClientes(clienteSocket, idCliente, Protocolo.TCP);
+                    
+                    // Registrar manejador en el mapa de activos
+                    manejadoresActivos.put(idCliente, manejador);
+                    
                     Thread hiloCliente = new Thread(manejador);
                     hiloCliente.start();
                     
@@ -209,6 +220,125 @@ public class ServidorMixto {
     }
     
     // =============================================
+    // METODOS PARA COMUNICACION ENTRE CLIENTES
+    // =============================================
+    
+    /**
+     * Envia un mensaje a todos los clientes TCP conectados (BROADCAST)
+     * 
+     * @param mensaje Mensaje a enviar a todos los clientes
+     * @param remitente ID del cliente que envia el mensaje (para exclusion opcional)
+     */
+    public static void broadcastMensaje(String mensaje, String remitente) {
+        System.out.println("BROADCAST de " + remitente + ": " + mensaje);
+        
+        // Enviar mensaje a todos los clientes TCP conectados
+        synchronized (manejadoresActivos) {
+            for (Map.Entry<String, ManejadorClientes> entry : manejadoresActivos.entrySet()) {
+                String idCliente = entry.getKey();
+                ManejadorClientes manejador = entry.getValue();
+                
+                // Opcional: excluir al remitente del broadcast
+                if (!idCliente.equals(remitente) && manejador.estaActivo()) {
+                    manejador.enviarMensaje("[BROADCAST de " + remitente + "] " + mensaje);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Envia un mensaje a un cliente TCP especifico (UNICAST)
+     * 
+     * @param mensaje Mensaje a enviar
+     * @param destino ID del cliente destino
+     * @param remitente ID del cliente remitente
+     * @return true si el mensaje se envio exitosamente, false si el destino no existe
+     */
+    public static boolean unicastMensaje(String mensaje, String destino, String remitente) {
+        System.out.println("UNICAST de " + remitente + " a " + destino + ": " + mensaje);
+        
+        ManejadorClientes manejadorDestino = manejadoresActivos.get(destino);
+        
+        if (manejadorDestino != null && manejadorDestino.estaActivo()) {
+            manejadorDestino.enviarMensaje("[PRIVADO de " + remitente + "] " + mensaje);
+            return true;
+        } else {
+            System.out.println("Cliente destino no encontrado o inactivo: " + destino);
+            return false;
+        }
+    }
+    
+    /**
+     * Envia un mensaje a cualquier cliente TCP disponible (ANYCAST)
+     * 
+     * @param mensaje Mensaje a enviar
+     * @param remitente ID del cliente remitente
+     * @return ID del cliente que recibio el mensaje, o null si no hay clientes disponibles
+     */
+    public static String anycastMensaje(String mensaje, String remitente) {
+        System.out.println("ANYCAST de " + remitente + ": " + mensaje);
+        
+        synchronized (manejadoresActivos) {
+            for (Map.Entry<String, ManejadorClientes> entry : manejadoresActivos.entrySet()) {
+                String idCliente = entry.getKey();
+                ManejadorClientes manejador = entry.getValue();
+                
+                // Enviar al primer cliente disponible (excluyendo al remitente)
+                if (!idCliente.equals(remitente) && manejador.estaActivo()) {
+                    manejador.enviarMensaje("[ANYCAST de " + remitente + "] " + mensaje);
+                    return idCliente;
+                }
+            }
+        }
+        
+        System.out.println("No hay clientes disponibles para ANYCAST");
+        return null;
+    }
+    
+    /**
+     * Remueve un manejador de cliente de la lista de activos
+     * Se llama cuando un cliente se desconecta
+     * 
+     * @param idCliente ID del cliente a remover
+     */
+    public static void removerManejador(String idCliente) {
+        manejadoresActivos.remove(idCliente);
+        clientesTCP.remove(idCliente);
+        System.out.println("Manejador removido para cliente: " + idCliente);
+    }
+    
+    // =============================================
+    // METODOS DE ACCESO PARA OTROS COMPONENTES
+    // =============================================
+    
+    /**
+     * Obtiene la lista de clientes TCP conectados
+     * 
+     * @return Lista de IDs de clientes TCP
+     */
+    public static List<String> getClientesTCP() {
+        return new ArrayList<>(clientesTCP);
+    }
+    
+    /**
+     * Obtiene la lista de clientes UDP registrados
+     * 
+     * @return Lista de IDs de clientes UDP
+     */
+    public static List<String> getClientesUDP() {
+        return new ArrayList<>(clientesUDP);
+    }
+    
+    /**
+     * Obtiene el mapa de manejadores activos
+     * 
+     * @return Mapa de manejadores de clientes activos
+     */
+    public static Map<String, ManejadorClientes> getManejadoresActivos() {
+        return new HashMap<>(manejadoresActivos);
+    }
+    
+    // =============================================
     // CONSOLA DE ADMINISTRACION
     // =============================================
     
@@ -257,6 +387,7 @@ public class ServidorMixto {
         System.out.println("\nCLIENTES CONECTADOS:");
         System.out.println("Clientes TCP (" + clientesTCP.size() + "): " + clientesTCP);
         System.out.println("Clientes UDP (" + clientesUDP.size() + "): " + clientesUDP);
+        System.out.println("Manejadores activos: " + manejadoresActivos.size());
     }
     
     /**
@@ -269,5 +400,6 @@ public class ServidorMixto {
         System.out.println("Puerto TCP: " + PUERTO_TCP);
         System.out.println("Puerto UDP: " + PUERTO_UDP);
         System.out.println("Total clientes: " + (clientesTCP.size() + clientesUDP.size()));
+        System.out.println("Manejadores activos: " + manejadoresActivos.size());
     }
 }
